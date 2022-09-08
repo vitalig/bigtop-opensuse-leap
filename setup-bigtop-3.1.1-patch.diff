@@ -1,0 +1,13 @@
+diff --git a/bigtop-packages/src/common/zookeeper/do-component-build b/bigtop-packages/src/common/zookeeper/do-component-build
+index 664a5c5..e3f043e 100644
+--- a/bigtop-packages/src/common/zookeeper/do-component-build
++++ b/bigtop-packages/src/common/zookeeper/do-component-build
+@@ -26,7 +26,7 @@ mkdir -p build
+ 
+ mkdir -p build/native
+ cp -R zookeeper-client/zookeeper-client-c/target/c/include build/native/
+-cp -R zookeeper-client/zookeeper-client-c/target/c/lib build/native/
++cp -R zookeeper-client/zookeeper-client-c/target/c/lib64 build/native/
+ cp -R zookeeper-client/zookeeper-client-c/target/c/bin build/native/
+ 
+ mkdir -p build/contrib/rest

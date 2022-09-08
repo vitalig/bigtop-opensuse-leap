@@ -1,0 +1,159 @@
+diff --git a/build.gradle b/build.gradle
+index 175d87a..d678db2 100644
+--- a/build.gradle
++++ b/build.gradle
+@@ -231,7 +231,7 @@ task toolchain(type:Exec,
+   if ('3.7' <= version && version < '4') {
+     command.addAll(['--parser', 'future'])
+   }
+-  command.addAll(["--modulepath=${projectDir.absolutePath}:/etc/puppet/modules:/usr/share/puppet/modules:/etc/puppetlabs/code/modules:/etc/puppet/code/modules",
++  command.addAll(["--modulepath=${projectDir.absolutePath}:/etc/puppet/modules:/usr/share/puppet/modules:/etc/puppetlabs/code/modules:/etc/puppet/code/modules:/etc/puppetlabs/code/environments/production/modules",
+     '-e', 'include bigtop_toolchain::installer'])
+   workingDir '.'
+   commandLine command
+diff --git a/bigtop_toolchain/manifests/packages.pp b/bigtop_toolchain/manifests/packages.pp
+index a0d1a42..c0ae010 100644
+--- a/bigtop_toolchain/manifests/packages.pp
++++ b/bigtop_toolchain/manifests/packages.pp
+@@ -115,7 +115,7 @@ class bigtop_toolchain::packages {
+         "libevent-devel",
+         "bison",
+         "flex",
+-        "libffi48-devel",
++        "libffi-devel",
+         "texlive-latex-bin-bin",
+         "libapr1",
+         "libapr1-devel"
+diff --git a/bigtop_toolchain/manifests/groovy.pp b/bigtop_toolchain/manifests/groovy.pp
+index 39f33e8..5160498 100644
+--- a/bigtop_toolchain/manifests/groovy.pp
++++ b/bigtop_toolchain/manifests/groovy.pp
+@@ -21,13 +21,13 @@ class bigtop_toolchain::groovy {
+   $groovy = "apache-groovy-binary-${groovy_version}"
+ 
+   exec { 'Download Groovy':
+-    command => "/usr/bin/wget https://dl.bintray.com/groovy/maven/${groovy}.zip",
++    command => "/usr/bin/wget https://archive.apache.org/dist/groovy/${groovy_version}/distribution/${groovy}.zip",
+     cwd     => "/usr/src",
+     unless  => "/usr/bin/test -f /usr/src/${groovy}.zip",
+   } ~>
+ 
+   exec {'Extract Groovy':
+-    command => /usr/bin/unzip -x -o /usr/src/${groovy}.zip":
++    command => "/usr/bin/unzip -x -o /usr/src/${groovy}.zip",
+     cwd     => '/usr/local',
+   } ->
+ 
+diff --git a/bigtop_toolchain/bin/puppetize.sh b/bigtop_toolchain/bin/puppetize.sh
+index 50dc921..19b494f 100755
+--- a/bigtop_toolchain/bin/puppetize.sh
++++ b/bigtop_toolchain/bin/puppetize.sh
+@@ -70,6 +70,19 @@ case ${ID}-${VERSION_ID} in
+         # As a workaround for that, enable the former here in advance of running the Puppet manifests.
+         dnf config-manager --set-enabled codeready-builder-for-rhel-8-rhui-rpms
+         ;;
++    opensuse-leap-15*)
++        zypper ref
++        zypper update
++        zypper install --auto-agree-with-licenses --no-confirm java-1_8_0-openjdk java-1_8_0-openjdk-devel \
++          ntp sharutils libffi-devel libtirpc-devel insserv-compat
++        # SLES users need to manually update the Puppet key before using new release packages
++        curl --remote-name --location https://yum.puppet.com/RPM-GPG-KEY-puppet-20250406
++        gpg --keyid-format 0xLONG --with-fingerprint ./RPM-GPG-KEY-puppet-20250406
++        rpm --import RPM-GPG-KEY-puppet-20250406
++        rpm -ivh https://yum.puppetlabs.com/puppet7/puppet7-release-sles-15.noarch.rpm
++        zypper install puppetserver
++        puppet module install puppetlabs-stdlib --version 4.12.0
++        ;;
+     *)
+         echo "Unsupported OS ${ID}-${VERSION_ID}."
+         exit 1
+diff --git a/bigtop-packages/src/rpm/ambari/SPECS/ambari.spec b/bigtop-packages/src/rpm/ambari/SPECS/ambari.spec
+index fda3ae9..679a378 100644
+--- a/bigtop-packages/src/rpm/ambari/SPECS/ambari.spec
++++ b/bigtop-packages/src/rpm/ambari/SPECS/ambari.spec
+@@ -25,6 +25,14 @@
+ %global initd_dir %{_sysconfdir}/rc.d/init.d
+ %endif
+ 
++%if 0%{?suse_version} >= 1300
++%bcond_without  suse13
++%define initpkg insserv-compat
++%else
++%bcond_with     suse13
++%define initpkg initscripts
++%endif
++
+ # disable repacking jars
+ %define __os_install_post %{nil}
+ 
+@@ -71,7 +79,8 @@ AMBARI_VERSION=%{ambari_version} bash $RPM_SOURCE_DIR/install_ambari.sh \
+ Summary: Ambari Server
+ Group: Development/Libraries
+ # BIGTOP-3139: install initscripts to workaround service command not available issue
+-Requires: openssl, postgresql-server >= 8.1, python2 >= 2.6, curl, initscripts
++# VG removed postgresql dependency here to use mysql
++Requires: openssl, python2 >= 2.6, curl, %{initpkg}
+ AutoProv: no
+ AutoReqProv: no
+ %description server
+@@ -157,6 +166,10 @@ case "$1" in
+     if [ -f "/var/lib/ambari-server/install-helper.sh" ]; then
+         /var/lib/ambari-server/install-helper.sh install
+     fi
++#   ambari-server not starting on opensuse15 issue, hash value not updated
++%if %{with suse13}
++    sed -i 's/^HASH="${buildNumber}"/HASH="custom"/' /etc/init.d/ambari-server
++%endif
+     chkconfig --add ambari-server
+   ;;
+   2) # Action upgrade
+@@ -228,7 +241,7 @@ exit 0
+ 
+ PYPATH=`find /usr/lib -maxdepth 1 -name 'python*' | sort`
+ PYLIB_DIR=`echo ${PYPATH} | awk '{print $1}'`
+-RESOURCE_MANAGEMENT_DIR= "${PYLIB_DIR}/site-packages/resource_management"
++RESOURCE_MANAGEMENT_DIR="${PYLIB_DIR}/site-packages/resource_management"
+ RESOURCE_MANAGEMENT_DIR_SERVER="/usr/lib/ambari-server/lib/resource_management"
+ JINJA_DIR="${PYLIB_DIR}/site-packages/ambari_jinja2"
+ JINJA_SERVER_DIR="/usr/lib/ambari-server/lib/ambari_jinja2"
+@@ -247,7 +260,7 @@ if [ -d "$RESOURCE_MANAGEMENT_DIR" ]; then  # resource_management dir exists
+   fi
+ fi
+ # setting resource_management shared resource
+-if [ ! -d "$RESOURCE_MANAGEMENT_DIR" ]; then
++if [ ! -d "$RESOURCE_MANAGEMENT_DIR" ] && [ ! -L "$RESOURCE_MANAGEMENT_DIR" ]; then
+   ln -s ${RESOURCE_MANAGEMENT_DIR_SERVER} ${RESOURCE_MANAGEMENT_DIR}
+ fi
+ 
+@@ -261,7 +274,7 @@ exit 0
+ %package agent
+ Summary: Ambari Agent
+ Group: Development/Libraries
+-Requires: openssl, zlib, python2 >= 2.6, initscripts
++Requires: openssl, zlib, python2 >= 2.6, %{initpkg}
+ AutoProv: no
+ AutoReqProv: no
+ %description agent
+@@ -337,7 +350,11 @@ case "$1" in
+     if [ -f "/var/lib/ambari-agent/install-helper.sh" ]; then
+         /var/lib/ambari-agent/install-helper.sh install
+     fi
+-  chkconfig --add ambari-agent
++#   ambari-agent not starting on opensuse15 issue, hash value not updated
++%if %{with suse13}
++    sed -i 's/^HASH="${buildNumber}"/HASH="custom"/' /var/lib/ambari-agent/bin/ambari-agent
++%endif
++    chkconfig --add ambari-agent
+   ;;
+   2) # Action upgrade
+     if [ -d "/etc/ambari-agent/conf.save" ]; then
+@@ -432,7 +449,7 @@ if [ -d "$RESOURCE_MANAGEMENT_DIR" ]; then  # resource_management dir exists
+   fi
+ fi
+ # setting resource_management shared resource
+-if [ ! -d "$RESOURCE_MANAGEMENT_DIR" ]; then
++if [ ! -d "$RESOURCE_MANAGEMENT_DIR" ] && [ ! -L "$RESOURCE_MANAGEMENT_DIR" ]; then
+   ln -s "$RESOURCE_MANAGEMENT_DIR_AGENT" "$RESOURCE_MANAGEMENT_DIR"
+ fi
+ 
