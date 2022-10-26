@@ -7,7 +7,7 @@ index 664a5c5..e3f043e 100644
  mkdir -p build/native
  cp -R zookeeper-client/zookeeper-client-c/target/c/include build/native/
 -cp -R zookeeper-client/zookeeper-client-c/target/c/lib build/native/
-+cp -R zookeeper-client/zookeeper-client-c/target/c/lib64 build/native/
++cp -R zookeeper-client/zookeeper-client-c/target/c/lib* build/native/
  cp -R zookeeper-client/zookeeper-client-c/target/c/bin build/native/
  
  mkdir -p build/contrib/rest
